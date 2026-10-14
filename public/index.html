@@ -33,7 +33,7 @@
       </div>
     </header>
 
-    <!-- Step 1: Thumbs Gatekeeper (满意度分流选择器) -->
+    <!-- Step 1: Thumbs Gatekeeper -->
     <div id="step-1" class="flex-1 flex flex-col justify-center p-6 fade-in-up step-panel">
       <h2 class="text-xl font-bold text-slate-800 text-center mb-2">How was your visit today?</h2>
       <p class="text-xs text-slate-400 text-center mb-8 uppercase tracking-wider">Your feedback helps us grow</p>
@@ -51,13 +51,16 @@
       </div>
     </div>
 
-    <!-- Negative Route: Private Feedback Form (私密改进表单) -->
+    <!-- Negative Route: Private Feedback Form -->
     <div id="step-feedback" class="hidden flex-1 flex flex-col p-6 fade-in-up step-panel">
       <h2 class="text-lg font-bold text-slate-800 text-center mb-1">We're sorry to hear that</h2>
       <p class="text-xs text-slate-400 text-center mb-6 uppercase tracking-wider">Tell us what went wrong</p>
       
-      <textarea id="private-feedback" rows="5" class="w-full p-4 text-sm bg-slate-50 border border-slate-200 rounded-xl shadow-inner focus:outline-none focus:ring-2 focus:ring-slate-500/20 transition resize-none text-slate-700 mb-4" placeholder="Please share your thoughts or suggestions..."></textarea>
+      <textarea id="private-feedback" rows="4" class="w-full p-4 text-sm bg-slate-50 border border-slate-200 rounded-xl shadow-inner focus:outline-none focus:ring-2 focus:ring-slate-500/20 transition resize-none text-slate-700 mb-3" placeholder="Please share your thoughts or suggestions..."></textarea>
       
+      <!-- Optional contact input -->
+      <input type="text" id="user-contact" class="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-500/20 mb-4" placeholder="WhatsApp / Phone (Optional - if you want a reply)">
+
       <div class="mt-auto">
         <button onclick="submitPrivateFeedback()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg transition active:scale-95 mb-2" id="submit-btn">
           Submit Feedback
@@ -156,15 +159,16 @@
     // Handle Thumbs Up / Down Route Routing
     function handleFeedbackRoute(type) {
       if (type === 'good') {
-        goToStep('2'); // Go to positive tag selection
+        goToStep('2'); 
       } else {
-        goToStep('feedback'); // Go to private feedback form
+        goToStep('feedback'); 
       }
     }
 
     // Submit private feedback to backend
     async function submitPrivateFeedback() {
       const feedback = document.getElementById('private-feedback').value;
+      const contact = document.getElementById('user-contact').value || 'Anonymous';
       const btn = document.getElementById('submit-btn');
       
       if(!feedback.trim()) {
@@ -178,7 +182,7 @@
         await fetch('/api/feedback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ shopId, feedback })
+          body: JSON.stringify({ shopId, feedback, contact })
         });
         goToStep('thanks');
       } catch(err) {
@@ -223,9 +227,13 @@
       generateText();
     }
 
+    // Fixed text generation with duplicate timer prevention
     async function generateText() {
       const textarea = document.getElementById('review-text');
+      
+      // Clear timer before network request starts
       if (typingTimer) clearInterval(typingTimer);
+      
       const loadingPhrases = ['Brewing ideas...', 'Thinking hard...', 'Asking the AI barista...'];
       textarea.value = loadingPhrases[Math.floor(Math.random() * loadingPhrases.length)];
 
@@ -238,6 +246,9 @@
         const data = await res.json();
         
         if (data.success) {
+          // Clear timer AGAIN right before injecting new text to prevent race condition
+          if (typingTimer) clearInterval(typingTimer);
+          
           textarea.value = '';
           let index = 0;
           typingTimer = setInterval(() => {
