@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Review Assistant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Confetti library for the celebration effect -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <style>
+    /* Custom animation for smooth step transitions */
+    .fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col items-center justify-center p-4">
+
+  <div class="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden relative min-h-[450px] flex flex-col">
+    
+    <!-- Header Area -->
+    <header class="text-center pt-8 pb-4 px-6 bg-amber-50">
+      <h1 id="shop-name" class="text-2xl font-bold text-slate-900">Loading...</h1>
+      
+      <!-- Progress Indicator -->
+      <div class="flex justify-center items-center gap-2 mt-4" id="progress-dots">
+        <div class="w-2.5 h-2.5 rounded-full bg-amber-500 transition-all duration-300 dot-indicator" id="dot-1"></div>
+        <div class="w-2.5 h-2.5 rounded-full bg-slate-200 transition-all duration-300 dot-indicator" id="dot-2"></div>
+        <div class="w-2.5 h-2.5 rounded-full bg-slate-200 transition-all duration-300 dot-indicator" id="dot-3"></div>
+        <div class="w-2.5 h-2.5 rounded-full bg-slate-200 transition-all duration-300 dot-indicator" id="dot-4"></div>
+      </div>
+    </header>
+
+    <!-- Step 1: Thumbs Gatekeeper (满意度分流选择器) -->
+    <div id="step-1" class="flex-1 flex flex-col justify-center p-6 fade-in-up step-panel">
+      <h2 class="text-xl font-bold text-slate-800 text-center mb-2">How was your visit today?</h2>
+      <p class="text-xs text-slate-400 text-center mb-8 uppercase tracking-wider">Your feedback helps us grow</p>
+      
+      <div class="grid grid-cols-2 gap-4">
+        <button onclick="handleFeedbackRoute('good')" class="flex flex-col items-center justify-center p-6 bg-amber-50/50 border-2 border-amber-200/60 rounded-2xl hover:bg-amber-100/50 hover:border-amber-400 transition transform active:scale-95 group">
+          <span class="text-4xl mb-2 group-hover:scale-110 transition">👍</span>
+          <span class="font-semibold text-slate-700 text-sm">Great!</span>
+        </button>
+
+        <button onclick="handleFeedbackRoute('bad')" class="flex flex-col items-center justify-center p-6 bg-slate-50 border-2 border-slate-200 rounded-2xl hover:bg-slate-100 hover:border-slate-300 transition transform active:scale-95 group">
+          <span class="text-4xl mb-2 group-hover:scale-110 transition">👎</span>
+          <span class="font-semibold text-slate-700 text-sm">Needs Work</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Negative Route: Private Feedback Form (私密改进表单) -->
+    <div id="step-feedback" class="hidden flex-1 flex flex-col p-6 fade-in-up step-panel">
+      <h2 class="text-lg font-bold text-slate-800 text-center mb-1">We're sorry to hear that</h2>
+      <p class="text-xs text-slate-400 text-center mb-6 uppercase tracking-wider">Tell us what went wrong</p>
+      
+      <textarea id="private-feedback" rows="5" class="w-full p-4 text-sm bg-slate-50 border border-slate-200 rounded-xl shadow-inner focus:outline-none focus:ring-2 focus:ring-slate-500/20 transition resize-none text-slate-700 mb-4" placeholder="Please share your thoughts or suggestions..."></textarea>
+      
+      <div class="mt-auto">
+        <button onclick="submitPrivateFeedback()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg transition active:scale-95 mb-2" id="submit-btn">
+          Submit Feedback
+        </button>
+        <button onclick="goToStep('1')" class="w-full text-slate-400 font-medium py-2 text-sm hover:text-slate-600">
+          ⬅ Back
+        </button>
+      </div>
+    </div>
+
+    <!-- Negative Route: Thank You Page -->
+    <div id="step-thanks" class="hidden flex-1 flex flex-col p-6 fade-in-up step-panel items-center justify-center">
+      <div class="text-6xl mb-4">🙏</div>
+      <h2 class="text-xl font-bold text-slate-800 text-center mb-2">Thank You</h2>
+      <p class="text-sm text-slate-500 text-center">Your suggestions have been sent directly to management. We'll do better next time!</p>
+    </div>
+
+    <!-- Positive Route Step 2: Tags Selection -->
+    <div id="step-2" class="hidden flex-1 flex flex-col p-6 fade-in-up step-panel">
+      <h2 class="text-lg font-bold text-slate-800 text-center mb-1">What did you love today?</h2>
+      <p class="text-xs text-slate-400 text-center mb-6 uppercase tracking-wider">Tap multiple tags</p>
+      
+      <div id="tag-container" class="flex flex-wrap justify-center gap-3 mb-8">
+        <!-- Tags dynamically loaded here -->
+      </div>
+      
+      <div class="mt-auto flex gap-2">
+        <button onclick="goToStep('1')" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-3.5 px-4 rounded-xl transition">⬅</button>
+        <button onclick="goToStep('3')" class="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg transition active:scale-95">Next Step ➔</button>
+      </div>
+    </div>
+
+    <!-- Positive Route Step 3: Tone Selection -->
+    <div id="step-3" class="hidden flex-1 flex flex-col p-6 fade-in-up step-panel">
+      <h2 class="text-lg font-bold text-slate-800 text-center mb-1">Choose your vibe</h2>
+      <p class="text-xs text-slate-400 text-center mb-6 uppercase tracking-wider">How do you want to sound?</p>
+      
+      <div class="flex flex-col gap-3 mb-8">
+        <button onclick="selectStyleAndGenerate('温馨治愈')" class="style-btn bg-white border-2 border-slate-100 text-sm py-4 rounded-xl font-medium text-slate-600 hover:border-amber-500 hover:bg-amber-50 transition">☕ Warm & Healing</button>
+        <button onclick="selectStyleAndGenerate('打工续命')" class="style-btn bg-white border-2 border-slate-100 text-sm py-4 rounded-xl font-medium text-slate-600 hover:border-amber-500 hover:bg-amber-50 transition">💻 Work Survival</button>
+        <button onclick="selectStyleAndGenerate('极简客观')" class="style-btn bg-white border-2 border-slate-100 text-sm py-4 rounded-xl font-medium text-slate-600 hover:border-amber-500 hover:bg-amber-50 transition">🔍 Minimalist & Objective</button>
+      </div>
+      
+      <div class="mt-auto">
+        <button onclick="goToStep('2')" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-3.5 px-4 rounded-xl transition active:scale-95">⬅ Back</button>
+      </div>
+    </div>
+
+    <!-- Positive Route Step 4: Result & Confetti -->
+    <div id="step-4" class="hidden flex-1 flex flex-col p-6 fade-in-up step-panel">
+      <h2 class="text-lg font-bold text-slate-800 text-center mb-1">Your Magic Review</h2>
+      <p class="text-xs text-slate-400 text-center mb-6 uppercase tracking-wider">Feel free to edit</p>
+      
+      <textarea id="review-text" rows="5" class="w-full p-4 text-sm bg-amber-50/50 border border-amber-200 rounded-xl shadow-inner focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition resize-none text-slate-700 leading-relaxed mb-4" placeholder="Crafting your review..."></textarea>
+      
+      <div class="flex justify-center mb-4">
+        <button onclick="generateText()" class="text-xs text-slate-500 font-medium hover:text-amber-600 flex items-center gap-1 bg-slate-100 py-1.5 px-3 rounded-full transition">🔄 Re-generate</button>
+      </div>
+      
+      <div class="mt-auto">
+        <button onclick="copyAndRedirect()" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-4 px-4 rounded-xl shadow-lg shadow-amber-500/30 transition active:scale-95 flex justify-center items-center gap-2">
+          📋 Copy & Post to Google
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const shopId = urlParams.get('shop') || 'pj_kopi';
+
+    let selectedTags = [];
+    let currentStyle = '温馨治愈'; 
+    let googleReviewUrl = '';
+    let typingTimer = null; 
+
+    // Initialize shop data
+    async function init() {
+      try {
+        const res = await fetch(`/api/shop/${shopId}`);
+        const data = await res.json();
+        document.getElementById('shop-name').innerText = data.name;
+        googleReviewUrl = data.googleUrl;
+        const container = document.getElementById('tag-container');
+        container.innerHTML = data.tags.map(tag => `
+          <button onclick="toggleTag('${tag}', this)" class="tag-btn text-sm bg-white border-2 border-slate-100 text-slate-600 px-4 py-2 rounded-full transition font-medium hover:border-amber-300">
+            ${tag}
+          </button>
+        `).join('');
+      } catch (err) {
+        document.getElementById('shop-name').innerText = "Store configuration error";
+      }
+    }
+
+    // Handle Thumbs Up / Down Route Routing
+    function handleFeedbackRoute(type) {
+      if (type === 'good') {
+        goToStep('2'); // Go to positive tag selection
+      } else {
+        goToStep('feedback'); // Go to private feedback form
+      }
+    }
+
+    // Submit private feedback to backend
+    async function submitPrivateFeedback() {
+      const feedback = document.getElementById('private-feedback').value;
+      const btn = document.getElementById('submit-btn');
+      
+      if(!feedback.trim()) {
+        alert("Please write down your suggestions before submitting.");
+        return;
+      }
+
+      btn.innerText = "Submitting...";
+      
+      try {
+        await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shopId, feedback })
+        });
+        goToStep('thanks');
+      } catch(err) {
+        btn.innerText = "Submit Feedback";
+        alert("Network error. Please try again.");
+      }
+    }
+
+    function toggleTag(tag, btn) {
+      if (selectedTags.includes(tag)) {
+        selectedTags = selectedTags.filter(t => t !== tag);
+        btn.classList.remove('bg-amber-500', 'text-white', 'border-amber-500');
+        btn.classList.add('bg-white', 'text-slate-600', 'border-slate-100');
+      } else {
+        selectedTags.push(tag);
+        btn.classList.add('bg-amber-500', 'text-white', 'border-amber-500');
+        btn.classList.remove('bg-white', 'text-slate-600', 'border-slate-100');
+      }
+    }
+
+    function goToStep(step) {
+      document.querySelectorAll('.step-panel').forEach(panel => panel.classList.add('hidden'));
+      
+      const dotsContainer = document.getElementById('progress-dots');
+      if (step === 'feedback' || step === 'thanks') {
+        dotsContainer.style.opacity = '0';
+      } else {
+        dotsContainer.style.opacity = '1';
+        document.querySelectorAll('.dot-indicator').forEach(dot => {
+          dot.classList.replace('bg-amber-500', 'bg-slate-200');
+        });
+        const dotElem = document.getElementById(`dot-${step}`);
+        if(dotElem) dotElem.classList.replace('bg-slate-200', 'bg-amber-500');
+      }
+
+      document.getElementById(`step-${step}`).classList.remove('hidden');
+    }
+
+    function selectStyleAndGenerate(style) {
+      currentStyle = style;
+      goToStep('4');
+      generateText();
+    }
+
+    async function generateText() {
+      const textarea = document.getElementById('review-text');
+      if (typingTimer) clearInterval(typingTimer);
+      const loadingPhrases = ['Brewing ideas...', 'Thinking hard...', 'Asking the AI barista...'];
+      textarea.value = loadingPhrases[Math.floor(Math.random() * loadingPhrases.length)];
+
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shopId, selectedTags, style: currentStyle })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          textarea.value = '';
+          let index = 0;
+          typingTimer = setInterval(() => {
+            if (index < data.text.length) {
+              textarea.value += data.text.charAt(index);
+              index++;
+            } else {
+              clearInterval(typingTimer);
+            }
+          }, 30); 
+        } else {
+          textarea.value = 'Failed to generate, please try again.';
+        }
+      } catch (err) {
+        textarea.value = 'Network error, please try again later.';
+      }
+    }
+
+    function copyAndRedirect() {
+      const text = document.getElementById('review-text').value;
+      if (!text || text.includes('Brewing') || text.includes('Thinking')) return;
+
+      navigator.clipboard.writeText(text).then(() => {
+        confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ['#f59e0b', '#10b981', '#3b82f6', '#ef4444'] });
+        setTimeout(() => {
+          alert('✅ Text copied! Redirecting to Google Review...');
+          if(googleReviewUrl) window.location.href = googleReviewUrl;
+        }, 1500);
+      }).catch(() => alert('Failed to copy, please select and copy manually.'));
+    }
+
+    init();
+  </script>
+</body>
+</html>
