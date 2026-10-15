@@ -1,157 +1,131 @@
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+require('dotenv').config();
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+
 app.use(cors());
 app.use(express.json());
-
-// Serve frontend static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Define file paths for configurations and data storage
-const SHOPS_CONFIG_FILE = path.join(__dirname, 'shops.json');
+const SHOPS_FILE = path.join(__dirname, 'shops.json');
 const FEEDBACK_FILE = path.join(__dirname, 'feedbacks.json');
 
-// Helper function to auto-detect an available Groq model
-async function getAvailableModel() {
-  const baseUrl = (process.env.AI_API_BASE || 'https://api.groq.com/openai/v1').replace(/\/$/, '');
+// Helper to read shops
+function getShops() {
+  if (!fs.existsSync(SHOPS_FILE)) return {};
   try {
-    const res = await axios.get(`${baseUrl}/models`, {
-      headers: { 'Authorization': `Bearer ${process.env.AI_API_KEY}` }
-    });
-    const models = res.data.data.map(m => m.id);
-    if (models.includes(process.env.AI_MODEL)) {
-      return process.env.AI_MODEL;
-    }
-    return models[0] || 'qwen/qwen3.8-27b';
-  } catch (err) {
-    return process.env.AI_MODEL || 'qwen/qwen3.8-27b';
+    return JSON.parse(fs.readFileSync(SHOPS_FILE, 'utf8'));
+  } catch (e) {
+    return {};
   }
 }
 
-// Helper function to load shops data from JSON file
-function loadShopsData() {
-  if (fs.existsSync(SHOPS_CONFIG_FILE)) {
-    try {
-      return JSON.parse(fs.readFileSync(SHOPS_CONFIG_FILE, 'utf8'));
-    } catch (e) {
-      console.error("Error reading shops.json", e);
-      return {};
-    }
+// API: Get shop info for frontend
+app.get('/api/shop/:shopId', (req, res) => {
+  const shops = getShops();
+  const shop = shops[req.params.shopId];
+  if (!shop) {
+    return res.status(404).json({ success: false, message: 'Shop not found' });
   }
-  return {};
-}
-
-// API: Get shop configuration dynamically
-app.get('/api/shop/:id', (req, res) => {
-  const shopId = req.params.id;
-  const shops = loadShopsData();
-  
-  // Provide a default fallback if the shop ID is not found
-  const shop = shops[shopId] || {
-    name: "Default Store",
-    googleUrl: "https://maps.google.com",
-    tags: ["Great Service", "Nice Environment", "Consistent Quality"]
-  };
-
-  res.json(shop);
+  // Do not expose pin to public client
+  const { pin, ...safeShop } = shop;
+  res.json({ success: true, shop: safeShop });
 });
 
-// API: Generate AI review text
-app.post('/api/generate', async (req, res) => {
-  const { shopId, selectedTags, style } = req.body;
-  const shops = loadShopsData();
-  const shop = shops[shopId] || shops['pj_kopi'] || { name: "The Store" };
+// API: Merchant Login & Fetch Feedbacks
+app.post('/api/merchant/login', (req, res) => {
+  const { shopId, pin } = req.body;
+  const shops = getShops();
+  const shop = shops[shopId];
 
-  const prompt = `
-You are a real customer who just visited [${shop.name}].
-Based on the selected tags: [${selectedTags && selectedTags.length ? selectedTags.join(', ') : 'None'}], write a 1-2 sentence, highly natural and conversational short review in a [${style || 'Warm & Healing'}] tone.
+  if (!shop || shop.pin !== pin) {
+    return res.status(401).json({ success: false, message: 'Invalid Shop ID or PIN' });
+  }
 
-Requirements:
-1. Do not use stiff marketing words like "highly recommended", "unparalleled", or "extremely satisfied".
-2. Focus on specific details and personal emotional feelings (e.g., quiet environment, very relaxing).
-3. Keep the length under 20-50 words, writing it like a casual check-in post on social media or Google Maps.
-`;
+  let feedbacks = [];
+  if (fs.existsSync(FEEDBACK_FILE)) {
+    try {
+      const allFeedbacks = JSON.parse(fs.readFileSync(FEEDBACK_FILE, 'utf8'));
+      feedbacks = allFeedbacks.filter(item => item.shopId === shopId);
+    } catch (e) {
+      feedbacks = [];
+    }
+  }
+
+  res.json({ success: true, shopName: shop.name, feedbacks });
+});
+
+// API: Submit Feedback (Private)
+app.post('/api/feedback', (req, res) => {
+  const { shopId, feedback, contact } = req.body;
+  if (!shopId || !feedback) {
+    return res.status(400).json({ success: false, message: 'Missing required fields' });
+  }
+
+  let allFeedbacks = [];
+  if (fs.existsSync(FEEDBACK_FILE)) {
+    try {
+      allFeedbacks = JSON.parse(fs.readFileSync(FEEDBACK_FILE, 'utf8'));
+    } catch (e) {
+      allFeedbacks = [];
+    }
+  }
+
+  const newEntry = {
+    id: Date.now().toString(),
+    shopId,
+    feedback,
+    contact: contact || '',
+    timestamp: new Date().toISOString()
+  };
+
+  allFeedbacks.push(newEntry);
+  fs.writeFileSync(FEEDBACK_FILE, JSON.stringify(allFeedbacks, null, 2), 'utf8');
+
+  res.json({ success: true, message: 'Feedback saved privately' });
+});
+
+// API: AI Review Assistant (Groq)
+app.post('/api/generate-review', async (req, res) => {
+  const { prompt, shopId } = req.body;
+  const shops = getShops();
+  const shop = shops[shopId] || { name: "Our Store" };
 
   try {
-    const baseUrl = (process.env.AI_API_BASE || 'https://api.groq.com/openai/v1').replace(/\/$/, '');
-    const activeModel = await getAvailableModel();
-
     const response = await axios.post(
-      `${baseUrl}/chat/completions`,
+      process.env.AI_API_BASE || 'https://api.groq.com/openai/v1',
       {
-        model: activeModel,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.85,
-        max_tokens: 150
+        model: process.env.AI_MODEL || 'qwen/qwen3.8-27b',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a helpful customer writing a glowing 5-star review for "${shop.name}". Write a natural, warm, and authentic review based on the user's input. Keep it concise (1-3 sentences).`
+          },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7
       },
       {
         headers: {
           'Authorization': `Bearer ${process.env.AI_API_KEY}`,
           'Content-Type': 'application/json'
-        },
-        timeout: 10000
+        }
       }
     );
 
-    const result = response.data.choices[0].message.content.trim();
-    res.json({ success: true, text: result });
+    const reviewText = response.data.choices[0].message.content.trim();
+    res.json({ success: true, review: reviewText });
   } catch (error) {
-    console.error('Groq API Error:', error.response?.data || error.message);
-    res.status(500).json({ success: false, error: 'Generation failed, please try again' });
+    console.error('AI Error:', error.response?.data || error.message);
+    res.status(500).json({ success: false, message: 'Failed to generate review' });
   }
 });
 
-// API: Handle private negative feedback submission
-app.post('/api/feedback', (req, res) => {
-  const { shopId, feedback, contact } = req.body;
-  
-  const newEntry = {
-    id: Date.now(),
-    shopId: shopId || 'pj_kopi',
-    feedback: feedback || '',
-    contact: contact || 'Anonymous',
-    time: new Date().toLocaleString()
-  };
-
-  let feedbacks = [];
-  if (fs.existsSync(FEEDBACK_FILE)) {
-    try {
-      feedbacks = JSON.parse(fs.readFileSync(FEEDBACK_FILE, 'utf8'));
-    } catch (e) {
-      feedbacks = [];
-    }
-  }
-
-  // Add the newest feedback to the beginning of the array
-  feedbacks.unshift(newEntry);
-  fs.writeFileSync(FEEDBACK_FILE, JSON.stringify(feedbacks, null, 2), 'utf8');
-
-  res.json({ success: true, message: 'Feedback saved successfully' });
-});
-
-// API: Retrieve feedbacks for merchant dashboard
-app.get('/api/feedbacks/:shopId', (req, res) => {
-  const { shopId } = req.params;
-  let feedbacks = [];
-  
-  if (fs.existsSync(FEEDBACK_FILE)) {
-    try {
-      const all = JSON.parse(fs.readFileSync(FEEDBACK_FILE, 'utf8'));
-      feedbacks = all.filter(item => item.shopId === shopId);
-    } catch (e) {
-      feedbacks = [];
-    }
-  }
-
-  res.json({ success: true, feedbacks });
-});
-
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
